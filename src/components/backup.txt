@@ -1,0 +1,158 @@
+<template>
+  <tr @click="toggleDetails" class="lead-card">
+    <!-- Основная информация в строке таблицы -->
+    <td>{{ props.lead.name }}</td>
+    <td>{{ props.lead.price }} руб.</td>
+    <td>{{ props.lead.id }}</td>
+    <td v-if="!expanded">
+      <button class="details-btn" @click.stop="toggleDetails">Подробнее</button>
+    </td>
+
+    <!-- Расширенная информация по сделке при клике -->
+    <td v-else colspan="4" class="lead-details">
+      <div class="lead-info">
+        <p><strong>Название:</strong> {{ props.lead.name }}</p>
+        <p><strong>ID:</strong> {{ props.lead.id }}</p>
+        <p><strong>Дата создания:</strong> {{ formattedDate }}</p>
+
+        <!-- Список задач -->
+        <div v-if="tasks.length">
+          <p><strong>Список задач:</strong></p>
+          <ul>
+            <li v-for="task in tasks" :key="task.id">
+              <p><strong>Задача:</strong> {{ task.text }}</p>
+              <p><strong>ID задачи:</strong> {{ task.id }}</p>
+              <p>
+                <strong>Дата завершения:</strong> {{ formatDate(task.complete_till) }}
+              </p>
+            </li>
+          </ul>
+        </div>
+        <p v-else>Нет задач для этой сделки</p>
+      </div>
+    </td>
+  </tr>
+</template>
+
+<script setup>
+import { ref, computed } from "vue";
+import axiosClient from "../api";
+
+const props = defineProps({
+  lead: Object,
+});
+
+const loading_task = ref(false);
+
+// Флаг для управления раскрытием расширенной информации
+const expanded = ref(false);
+const tasks = ref([]); // Массив задач для данной сделки
+const currentDate = new Date(); // Текущая дата
+currentDate.setHours(0, 0, 0, 0); // Устанавливаем время на 00:00:00
+const today = Math.floor(currentDate.getTime() / 1000);
+
+// Форматируем дату в формате DD.MM.YYYY
+const formattedDate = computed(() => {
+  return props.lead.created_at
+    ? new Date(props.lead.created_at * 1000).toLocaleDateString("ru-RU")
+    : "Дата неизвестна";
+});
+
+// Функция для переключения отображения деталей и получения задач
+const toggleDetails = async () => {
+  expanded.value = !expanded.value;
+
+  if (expanded.value && tasks.value.length === 0) {
+    await fetchTasks();
+  }
+};
+
+const fetchActualTask = async () => {
+  loading_task.value = true;
+  axiosClient
+    .get(
+      `/api/v4/tasks?filter[entity_id][]=${props.lead.id}&filter[complete_till][from]=${today}&order[complete_till]=asc&limit=1`
+    )
+    .then((response) => {
+      console.log(response);
+      tasks.value = response.data ? response.data._embedded.tasks : [] ;
+    })
+    .catch((error) => {
+      // console.log(error);
+      console.error("Ошибка при получении задач:", error);
+    })
+    .finally(() => {
+      loading_task.value = false;
+    });
+};
+const fetchFailedTask = async () => {
+  loading_task.value = true;
+  axiosClient
+    .get(
+      `/api/v4/tasks?filter[entity_id][]=${props.lead.id}&filter[is_completed]=0&filter[complete_till][to]=${today}&order[complete_till]=desc&limit=1`
+    )
+    .then((response) => {
+      console.log(response);
+      tasks.value = response.data._embedded.tasks;
+    })
+    .catch((error) => {
+      // console.log(error);
+      console.error("Ошибка при получении задач:", error);
+    })
+    .finally(() => {
+      loading_task.value = false;
+    });
+};
+
+// Функция для получения списка задач по сделке
+const fetchTasks = async () => {
+  fetchActualTask();
+  if (tasks.value.length == 0) {
+    fetchFailedTask();
+  }
+};
+
+// Форматирование даты задачи в формате DD.MM.YYYY из Unix Timestamp
+const formatDate = (timestamp) => {
+  return timestamp
+    ? new Date(timestamp * 1000).toLocaleDateString("ru-RU")
+    : "Дата неизвестна";
+};
+</script>
+
+<style scoped>
+.lead-card {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.lead-card:hover {
+  background-color: #f0f8ff; /* Светлый оттенок голубого */
+}
+
+.lead-info {
+  padding: 16px;
+  background-color: #f9fafb;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+}
+
+.details-btn {
+  padding: 8px 16px;
+  background-color: #007bff;
+  border: none;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.details-btn:hover {
+  background-color: #0056b3;
+}
+
+.lead-details {
+  background-color: #f5faff;
+  padding: 16px;
+}
+</style>
